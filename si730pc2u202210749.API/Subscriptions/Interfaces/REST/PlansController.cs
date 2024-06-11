@@ -77,22 +77,28 @@ public class PlansController(IPlanQueryService planQueryService, IPlanCommandSer
         return CreatedAtAction(nameof(GetPlanById), new { planId = planResource.Id }, planResource);
     }
 
-    [HttpPut]
+    [HttpPut("{planId:int}")]
     [SwaggerOperation(
         Summary = "Update a plan.",
-        Description = "Updates a plan.",
-        OperationId = "UpdatePlan",
+        Description = "Updates a plan by its identifier.",
+        OperationId = "UpdatePlanById",
         Tags = new[] { "Plans" }
     )]
-    public async Task<IActionResult> UpdatePlan(UpdatePlanResource resource)
+    public async Task<IActionResult> UpdatePlan(int planId, UpdatePlanResource resource)
     {
-        var existingPlan = await planQueryService.Handle(new GetPlanByName(resource.Name));
-        if (existingPlan != null)
-        {
-            return Conflict("A plan with the same name already exists.");
-        }
+        var existingPlan = await planQueryService.Handle(new GetPlanByIdQuery(planId));
+        if (existingPlan == null) return NotFound();
 
-        if (resource.IsDefault == 1)
+        if (existingPlan.Name.Name != resource.Name)
+        {
+            var planWithNewName = await planQueryService.Handle(new GetPlanByName(resource.Name));
+            if (planWithNewName != null)
+            {
+                return Conflict("A plan with the same name already exists.");
+            }
+        }
+        
+        if (existingPlan.IsDefault.IsDefault != resource.IsDefault && resource.IsDefault == 1)
         {
             var defaultPlan = await planQueryService.Handle(new GetPlanByIsDefault(1));
             if (defaultPlan != null)
@@ -100,8 +106,8 @@ public class PlansController(IPlanQueryService planQueryService, IPlanCommandSer
                 return Conflict("A default plan already exists.");
             }
         }
-        
-        var updatePlanCommand = UpdatePlanCommandFromResourceAssembler.ToCommandFromResource(resource);
+
+        var updatePlanCommand = UpdatePlanCommandFromResourceAssembler.ToCommandFromResource(planId, resource);
         var plan = await planCommandService.Handle(updatePlanCommand);
         if (plan is null) return NotFound();
         var planResource = PlanResourceFromEntityAssembler.ToResourceFromEntity(plan);
